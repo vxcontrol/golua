@@ -11,6 +11,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 
 
 #include "luaconf.h"
@@ -20,7 +21,7 @@
 #define LUA_RELEASE	"Lua 5.1.4"
 #define LUA_VERSION_NUM	501
 #define LUA_COPYRIGHT	"Copyright (C) 1994-2008 Lua.org, PUC-Rio"
-#define LUA_AUTHORS 	"R. Ierusalimschy, L. H. de Figueiredo & W. Celes"
+#define LUA_AUTHORS	"R. Ierusalimschy, L. H. de Figueiredo & W. Celes"
 
 
 /* mark for precompiled code (`<esc>Lua') */
@@ -39,7 +40,8 @@
 #define lua_upvalueindex(i)	(LUA_GLOBALSINDEX-(i))
 
 
-/* thread status; 0 is OK */
+/* thread status */
+#define LUA_OK		0
 #define LUA_YIELD	1
 #define LUA_ERRRUN	2
 #define LUA_ERRSYNTAX	3
@@ -144,6 +146,9 @@ LUA_API int            (lua_rawequal) (lua_State *L, int idx1, int idx2);
 LUA_API int            (lua_lessthan) (lua_State *L, int idx1, int idx2);
 
 LUA_API lua_Number      (lua_tonumber) (lua_State *L, int idx);
+LUA_API int64_t         (lua_cdata_to_int64) (lua_State *L, int idx);
+LUA_API int32_t         (lua_cdata_to_int32) (lua_State *L, int idx);
+LUA_API uint64_t        (lua_cdata_to_uint64) (lua_State *L, int idx);
 LUA_API lua_Integer     (lua_tointeger) (lua_State *L, int idx);
 LUA_API int             (lua_toboolean) (lua_State *L, int idx);
 LUA_API const char     *(lua_tolstring) (lua_State *L, int idx, size_t *len);
@@ -226,6 +231,7 @@ LUA_API int  (lua_status) (lua_State *L);
 #define LUA_GCSTEP		5
 #define LUA_GCSETPAUSE		6
 #define LUA_GCSETSTEPMUL	7
+#define LUA_GCISRUNNING		9
 
 LUA_API int (lua_gc) (lua_State *L, int what, int data);
 
@@ -243,9 +249,11 @@ LUA_API void  (lua_concat) (lua_State *L, int n);
 LUA_API lua_Alloc (lua_getallocf) (lua_State *L, void **ud);
 LUA_API void lua_setallocf (lua_State *L, lua_Alloc f, void *ud);
 
+LUA_API void lua_setexdata(lua_State *L, void *exdata);
+LUA_API void *lua_getexdata(lua_State *L);
 
 
-/* 
+/*
 ** ===============================================================
 ** some useful macros
 ** ===============================================================
@@ -336,11 +344,23 @@ LUA_API const char *lua_getlocal (lua_State *L, const lua_Debug *ar, int n);
 LUA_API const char *lua_setlocal (lua_State *L, const lua_Debug *ar, int n);
 LUA_API const char *lua_getupvalue (lua_State *L, int funcindex, int n);
 LUA_API const char *lua_setupvalue (lua_State *L, int funcindex, int n);
-
 LUA_API int lua_sethook (lua_State *L, lua_Hook func, int mask, int count);
 LUA_API lua_Hook lua_gethook (lua_State *L);
 LUA_API int lua_gethookmask (lua_State *L);
 LUA_API int lua_gethookcount (lua_State *L);
+
+/* From Lua 5.2. */
+LUA_API void *lua_upvalueid (lua_State *L, int idx, int n);
+LUA_API void lua_upvaluejoin (lua_State *L, int idx1, int n1, int idx2, int n2);
+LUA_API int lua_loadx (lua_State *L, lua_Reader reader, void *dt,
+		       const char *chunkname, const char *mode);
+LUA_API const lua_Number *lua_version (lua_State *L);
+LUA_API void lua_copy (lua_State *L, int fromidx, int toidx);
+LUA_API lua_Number lua_tonumberx (lua_State *L, int idx, int *isnum);
+LUA_API lua_Integer lua_tointegerx (lua_State *L, int idx, int *isnum);
+
+/* From Lua 5.3. */
+LUA_API int lua_isyieldable (lua_State *L);
 
 
 struct lua_Debug {
