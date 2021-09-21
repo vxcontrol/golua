@@ -1,6 +1,7 @@
 package lua
 
 import (
+	"fmt"
 	"testing"
 	"unsafe"
 )
@@ -78,6 +79,32 @@ func TestCheckStringFail(t *testing.T) {
 	}
 }
 
+// jea: works under OpenLibs, because generally
+//      we will need pcall/xpcall.
+//
+// See https://github.com/vxcontrol/golua#on-error-handling
+//   for why they are hidden. We should probably
+//   be hiding these then using unsafe_pcall, and
+//   verify that Lua code using them doesn't call
+//   back into Go code that panics.
+/*
+Shortened version of the on-error-handling link:
+
+Lua's exceptions are incompatible with Go.
+golua works around this incompatibility by
+setting up protected execution environments
+in lua.State.DoString, lua.State.DoFile, and
+lua.State.Call and turning every exception
+into a Go panic.
+
+This means that:
+
+In general you can't do any exception handling
+from Lua, pcall and xpcall are renamed to
+unsafe_pcall and unsafe_xpcall. They are only
+safe to be called from Lua code that never
+calls back to Go. Use at your own risk.
+*/
 func TestPCallHidden(t *testing.T) {
 	L := NewState()
 	L.OpenLibs()
@@ -241,8 +268,7 @@ func TestLikeUserdata(t *testing.T) {
 
 	userDataProper := func(L *State) {
 		rawptr := L.NewUserdata(uintptr(unsafe.Sizeof(Userdata{})))
-		var ptr *Userdata
-		ptr = (*Userdata)(rawptr)
+		ptr := (*Userdata)(rawptr)
 		ptr.a = 2
 		ptr.b = 3
 
@@ -343,12 +369,12 @@ func TestStackTrace(t *testing.T) {
 
 	le := err.(*LuaError)
 
-	if le.Code() != LUA_ERRERR {
-		t.Fatalf("Wrong kind of error encountered running calls.lua: %v (%d %d)\n", le, le.Code(), LUA_ERRERR)
+	if le.Code != LUA_ERRRUN {
+		t.Fatalf("Wrong kind of error encountered running calls.lua: %v (%d %d)\n", le, le.Code, LUA_ERRERR)
 	}
 
-	if len(le.StackTrace()) != 6 {
-		t.Fatalf("Wrong size of stack trace (%v)\n", le.StackTrace())
+	if len(le.LuaST) != 6 {
+		t.Fatalf("Wrong size of stack trace (%v)\n", le)
 	}
 }
 
@@ -430,8 +456,318 @@ func TestCustomDebugHook(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Script should have raised an error")
 	} else {
-		if err.Error() != "stop" {
-			t.Fatal("Error should be coming from the hook")
+		le := err.(*LuaError)
+		if le.Code != 0 {
+			t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, 0)
+		}
+		if le.Msg != "stop" {
+			t.Fatalf("Error should be coming from the hook: %v", le)
 		}
 	}
+}
+
+func TestRunLuaCallback(t *testing.T) {
+	L := NewState()
+	L.OpenLibs()
+	defer L.Close()
+
+	var stCb *State
+	var refCb, refTr int
+	inc, rounds := 3, 100
+	regCb := func(L *State) int {
+		if !L.IsFunction(-1) {
+			t.Fatalf("Recived callback is not a lua function")
+		}
+
+		stCb = L.NewThread()
+		refTr = L.Ref(LUA_REGISTRYINDEX)
+		refCb = L.Ref(LUA_REGISTRYINDEX)
+
+		return 0
+	}
+
+	L.Register("reg_cb", regCb)
+
+	// This code demonstrates checking that a value on the stack is a go function
+	L.CheckStack(1)
+	L.GetGlobal("reg_cb")
+	if !L.IsGoFunction(-1) {
+		t.Fatalf("IsGoFunction failed to recognize a Go function object")
+	}
+	L.Pop(1)
+
+	// We call example_function from inside Lua VM
+	if err := L.DoString("r = 0; reg_cb(function(x) r = r + x; return r; end)"); err != nil {
+		t.Fatalf("Error executing main function: %v", err)
+	}
+
+	if stCb == nil {
+		t.Fatalf("Lua callback is not set")
+	}
+
+	for i := 0; i < rounds; i++ {
+		ttop := stCb.GetTop()
+		stCb.RawGeti(LUA_REGISTRYINDEX, refCb)
+		stCb.PushNumber(float64(inc))
+		if err := stCb.Call(1, 1); err != nil {
+			t.Fatalf("Error executing callback function: %v", err)
+		}
+		if !stCb.IsNumber(-1) {
+			t.Fatalf("Recived result from callback is not a number")
+		}
+		cbRes := stCb.ToNumber(-1)
+		if cbRes != float64(inc*(i+1)) {
+			t.Fatalf("Expected callback result is not match value: %0.f", cbRes)
+		}
+		stCb.SetTop(ttop)
+	}
+
+	L.Unref(LUA_REGISTRYINDEX, refCb)
+	L.Unref(LUA_REGISTRYINDEX, refTr)
+
+	L.GetGlobal("r")
+	top := L.GetTop()
+	obsR := L.ToNumber(top)
+	if obsR != float64(inc*rounds) {
+		t.Fatalf("Result is not expected %v", obsR)
+	}
+	L.Pop(-1)
+}
+
+func TestRunLuaCallbackFail(t *testing.T) {
+	L := NewState()
+	L.OpenLibs()
+	defer L.Close()
+
+	var stCb *State
+	var refCb, refTr int
+	regCb := func(L *State) int {
+		if !L.IsFunction(-1) {
+			t.Fatalf("Recived callback is not a lua function")
+		}
+
+		stCb = L.NewThread()
+		refTr = L.Ref(LUA_REGISTRYINDEX)
+		refCb = L.Ref(LUA_REGISTRYINDEX)
+
+		return 0
+	}
+
+	L.Register("reg_cb", regCb)
+
+	// This code demonstrates checking that a value on the stack is a go function
+	L.CheckStack(1)
+	L.GetGlobal("reg_cb")
+	if !L.IsGoFunction(-1) {
+		t.Fatalf("IsGoFunction failed to recognize a Go function object")
+	}
+	L.Pop(1)
+
+	// We call example_function from inside Lua VM
+	if err := L.DoString("reg_cb(function(x) for t=1,x do print(t); end; return x; end)"); err != nil {
+		t.Fatalf("Error executing main function: %v", err)
+	}
+
+	if stCb == nil {
+		t.Fatalf("Lua callback is not set")
+	}
+
+	for i := 0; i < 10; i++ {
+		stCb.RawGeti(LUA_REGISTRYINDEX, refCb)
+		if i%2 == 0 {
+			stCb.PushNumber(3)
+		} else {
+			stCb.PushString("abc")
+		}
+		if err := stCb.Call(1, 1); err == nil && i%2 == 1 {
+			t.Fatal("Call did not return an error")
+		} else if err != nil {
+			le := err.(*LuaError)
+
+			if le.Code != LUA_ERRRUN {
+				t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, LUA_ERRRUN)
+			}
+			if len(le.LuaST) != 2 {
+				t.Fatalf("Wrong amount of lines in stacktrace: %v (%d)\n", le, len(le.LuaST))
+			}
+		}
+		stCb.Pop(-1)
+	}
+
+	L.Unref(LUA_REGISTRYINDEX, refCb)
+	L.Unref(LUA_REGISTRYINDEX, refTr)
+}
+
+func TestCoroutineRunning(t *testing.T) {
+	L := NewState()
+	L.OpenLibs()
+	defer L.Close()
+
+	butterCalled := 0
+	butter := func(L *State) int {
+		butterCalled++
+		tot := 0.0
+		tot += L.ToNumber(-1)
+		tot += L.ToNumber(-2)
+		tot += L.ToNumber(-3)
+		L.Pop(3)
+		L.PushNumber(tot)
+		return 1
+	}
+
+	L.Register("butter", butter)
+
+	// This code demonstrates checking that a value on the stack is a go function
+	L.CheckStack(1)
+	L.GetGlobal("butter")
+	if !L.IsGoFunction(-1) {
+		t.Fatalf("IsGoFunction failed to recognize a Go function object")
+	}
+	L.Pop(1)
+
+	// We call example_function from inside Lua VM
+	butterCalled = 0
+	if err := L.DoString("a = {coroutine.resume(coroutine.create(function() return butter(4,5,6); end))}; for k,v in pairs(a) do print('a.key= ',k, '  value:', v); end; b = a[2]"); err != nil {
+		t.Fatalf("Error executing butter function: %v\n", err)
+	}
+	if butterCalled != 1 {
+		t.Fatalf("It appears the butter function wasn't actually called\n")
+	}
+
+	L.GetGlobal("b")
+	top := L.GetTop()
+	obsB := L.ToNumber(top)
+	if obsB != 15.0 {
+		t.Fatalf("butter() summing 4+5+6 should have given 15, but instead got %v\n", obsB)
+	}
+}
+
+func TestLuaRegsitryIsPerState(t *testing.T) {
+	// We test the  assumption
+	// that the Lua Registry is shared by all
+	// coroutines within a main C.lua State.
+	// However two different C.lua_States
+	// are expected to have distinct registries.
+	//
+	// If validated, we'll use this fact to
+	// store a pointer to the main C.lua_State
+	// in the registry, and have all
+	// coroutines use the key to find their
+	// main state.
+	//
+	// Result: the assumption was confirmed.
+	// The registry is distinct per main State,
+	// and shared by coroutines within one state.
+
+	L := NewState()
+	L.OpenLibs()
+	defer L.Close()
+
+	L2 := NewState()
+	L2.OpenLibs()
+	defer L2.Close()
+
+	key := "lua_test.my_registry_key"
+	val := "lua_test.my_value_for_testing"
+	L.PushString(key)
+	L.PushString(val)
+	L.SetTable(LUA_REGISTRYINDEX)
+	top := L.GetTop()
+	if top != 0 {
+		panic("expected empty stack")
+	}
+	L.PushString(key)
+	L.GetTable(LUA_REGISTRYINDEX)
+	if L.IsNil(-1) {
+		panic("expected value back")
+	}
+	obsVal := L.ToString(-1)
+	if obsVal != val {
+		panic("expected obsVal to match val")
+	}
+	//fmt.Printf("good: retreived val from L registry\n")
+	L.Pop(1)
+
+	// now query the L2 registry
+	L2.PushString(key)
+	L2.GetTable(LUA_REGISTRYINDEX)
+	if !L2.IsNil(-1) {
+		fmt.Printf("bad, expected nil, got: '%s'\n", L2.LuaStackPosToString(-1))
+		panic("expected nil back when querying L2 registry for key")
+	}
+	//fmt.Printf("good: did not retreived val from L2 registry under key\n")
+
+	// now check that a new coroutine in L sees the same registry.
+	L3 := L.NewThread()
+	L3.PushString(key)
+	L3.GetTable(LUA_REGISTRYINDEX)
+	if L3.IsNil(-1) {
+		panic("expected value back")
+	}
+	obsVal3 := L3.ToString(-1)
+	if obsVal3 != val {
+		panic("expected obsVal3 to match val")
+	}
+	//fmt.Printf("good: retreived val from L3 registry\n")
+}
+
+func assert(t *testing.T, b bool, msg string) {
+	if !b {
+		t.Fatal(msg)
+	}
+}
+
+func TestToThreadDeduplicatesCoroutines(t *testing.T) {
+	// when ToThread encounters the same coroutine
+	// again, it should return the prior *State, and
+	// not generate a new wrapper for the same coroutine.
+
+	L := NewState()
+	L.OpenLibs()
+	defer L.Close()
+
+	isMain := L.PushThread()
+	if !isMain {
+		t.Fatal("should have gotten isMain true!")
+	}
+	thr := L.ToThread(-1)
+	if thr != L {
+		t.Fatal("ToThread should dedup")
+	}
+
+	L2 := NewState()
+	L2.OpenLibs()
+	defer L2.Close()
+
+	L2.PushThread()
+	thr2 := L2.ToThread(-1)
+	if thr2 != L2 {
+		t.Fatal("ToThread should dedup L2")
+	}
+
+	if thr == thr2 {
+		t.Fatal("thr should not equal thr2")
+	}
+
+	// make some new coroutines, make sure they are deduped.
+	co2b := L2.NewThread()
+	if co2b == thr2 || co2b == thr {
+		t.Fatal("co2b should not equal thr2 or thr")
+	}
+
+	co2b_isMain := co2b.PushThread()
+	if co2b.ToThread(-1) != co2b {
+		t.Fatal("co2b was not deduped!")
+	}
+	assert(t, !co2b_isMain, "co2b_isMain should not have been a main thread!")
+
+	// coroutines from Lua first
+	err := co2b.DoString("a = 1; return coroutine.create(function() return a; end)")
+	if err != nil {
+		t.Fatalf("DoString returned an error: %v\n", err)
+	}
+
+	thr4 := co2b.ToThread(-1)
+	assert(t, thr4.AllCoro == nil, "non-main coroutines should have nil AllCoro maps")
+	assert(t, L2.AllCoro[thr4.Upos] == thr4, "thr4 should be found in L2's AllCoro, at Upos")
 }

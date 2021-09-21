@@ -1,36 +1,38 @@
 package main
 
-import "github.com/aarzilli/golua/lua"
-import "fmt"
+import (
+	"fmt"
 
-func test(L *lua.State) int {
-	fmt.Println("hello world! from go!")
-	return 0
-}
+	"github.com/vxcontrol/golua/lua"
+)
 
 func main() {
-
-	var L *lua.State
+	var (
+		currentPanicf lua.LuaGoFunction
+		L             *lua.State
+	)
 
 	L = lua.NewState()
 	defer L.Close()
 	L.OpenLibs()
 
-	currentPanicf := L.AtPanic(nil)
-	currentPanicf = L.AtPanic(currentPanicf)
-	newPanic := func(L1 *lua.State) int {
-		fmt.Println("I AM PANICKING!!!", currentPanicf)
+	newPanicf := func(L1 *lua.State) int {
+		le := (&lua.LuaError{}).New(L1, 0, L1.ToString(-1))
+		fmt.Println("I AM PANICKING!!!", currentPanicf, le.Msg)
 		if currentPanicf != nil {
 			return currentPanicf(L1)
 		}
 
 		return 1
 	}
-
-	L.AtPanic(newPanic)
+	currentPanicf = L.AtPanic(newPanicf)
 
 	//force a panic
-	L.PushNil()
+	test := func(L1 *lua.State) int {
+		L1.RaiseError("panic check")
+		return 0
+	}
+	L.PushGoFunction(test)
 	L.Call(0, 0)
 
 	fmt.Println("End")

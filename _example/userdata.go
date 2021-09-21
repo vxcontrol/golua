@@ -1,8 +1,11 @@
 package main
 
-import "github.com/aarzilli/golua/lua"
-import "unsafe"
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+
+	"github.com/vxcontrol/golua/lua"
+)
 
 type Userdata struct {
 	a, b int

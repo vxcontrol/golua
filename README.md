@@ -1,11 +1,17 @@
 Go Bindings for the lua C API
 =========================
 
-[![Build Status](https://travis-ci.org/aarzilli/golua.svg?branch=master)](https://travis-ci.org/aarzilli/golua)
+[![Build Status](https://travis-ci.org/vxcontrol/golua.svg?branch=master)](https://travis-ci.org/vxcontrol/golua)
 
 Simplest way to install:
 
-	# go get github.com/aarzilli/golua/lua
+	# go get -u github.com/vxcontrol/golua/lua
+
+Will work as long as your compiler can find a shared object called lua5.1 on linux, or lua anywhere else.
+If your linux system uses "lua" as the shared object name for lua (for example, Fedora Core does this) you can install using:
+
+	# go get -u github.com/vxcontrol/golua/lua
+
 
 You can then try to run the examples:
 
@@ -15,19 +21,6 @@ You can then try to run the examples:
 	$ go run panic.go
 	$ go run userdata.go
 
-This library is configured using build tags. By default it will look for a library (or "shared object") called:
-
-* lua5.1 on Linux and macOS
-* lua on Windows
-* lua-5.1 on FreeBSD
-
-If this doesn't work `-tags luadash5.1` can be used to force `lua-5.1`, and `-tags llua` can be used to force `lua`.
-
-If you want to statically link to liblua.a you can do that with `-tags luaa`. Luajit can also be used by
-specifying `-tags luajit`.
-
-The library uses lua5.1 by default but also supports lua5.2 by specifying `-tags lua52`, lua5.3 by
-specifying `-tags lua53`, and lua5.4 by specifying `-tags lua54`.
 
 QUICK START
 ---------------------
@@ -110,21 +103,13 @@ ON THREADS AND COROUTINES
 
 'lua.State' is not thread safe, but the library itself is. Lua's coroutines exist but (to my knowledge) have never been tested and are likely to encounter the same problems that errors have, use at your own peril.
 
-ODDS AND ENDS
----------------------
-
-* If you want to build against lua5.2, lua5.3, or lua5.4 use the build tags lua52, lua53, or lua54 respectively.
-* Compiling from source yields only a static link library (liblua.a), you can either produce the dynamic link library on your own or use the `luaa` build tag.
-
 LUAJIT
 ---------------------
 
-To link with [luajit-2.0.x](http://luajit.org/luajit.html), you can use CGO_CFLAGS and CGO_LDFLAGS environment variables
+To link with [luajit-2.1.x](http://luajit.org/luajit.html), you can use CGO_CFLAGS and CGO_LDFLAGS environment variables
 
 ```
-$ CGO_CFLAGS=`pkg-config luajit --cflags`
-$ CGO_LDFLAGS=`pkg-config luajit --libs-only-L`
-$ go get -f -u -tags luajit github.com/aarzilli/golua/lua
+$ go get -f -u github.com/vxcontrol/golua/lua
 ```
 
 CONTRIBUTORS
