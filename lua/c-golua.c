@@ -91,7 +91,7 @@ static lua_State* clua_get_main_thread(lua_State* L) {
 	lua_gettable(L, LUA_REGISTRYINDEX); // pushes value onto top of stack
 	// stack: uniqArray
 
-	if (lua_isnil(L,-1)) {
+	if (lua_isnil(L, -1)) {
 		printf("\n debug: arg. nil back for UniqKey lookup.\n");
 		exit(-1);
 	}
@@ -103,11 +103,11 @@ static lua_State* clua_get_main_thread(lua_State* L) {
 
 	int ty = lua_type(L, -1);
 	
-	lua_State* mainThread = lua_tothread(L, -1);
+	lua_State* main_thread = lua_tothread(L, -1);
 	
 	lua_settop(L, top);
 
-	return mainThread;
+	return main_thread;
 }
 
 size_t clua_getgostate(lua_State* L)
@@ -115,7 +115,7 @@ size_t clua_getgostate(lua_State* L)
 	size_t gostateindex;
 
 	//get gostate from registry entry
-	lua_pushlightuserdata(L,(void*)&GoMainStatesKey);
+	lua_pushlightuserdata(L, (void*)&GoMainStatesKey);
 	lua_gettable(L, LUA_REGISTRYINDEX); // pushes value onto top of stack
 
 	// 'k' is now a map from lua_State* to index
@@ -145,14 +145,14 @@ int callback_function(lua_State* coro)
 	int r;
 	unsigned int *fid = clua_checkgosomething(coro, 1, MT_GOFUNCTION);
 	size_t coro_index = clua_getgostate(coro);
-	lua_State* mainThread = clua_get_main_thread(coro);
-	size_t mainIndex = clua_getgostate(mainThread);
+	lua_State* main_thread = clua_get_main_thread(coro);
+	size_t main_index = clua_getgostate(main_thread);
 
 	// jea: the metatable is on the stack.
 	//remove the userdata metatable (go function??) from the stack (to present same behavior as lua_CFunctions)
 	lua_remove(coro, 1);
 
-	return golua_callgofunction(coro, coro_index, mainIndex, mainThread, fid!=NULL ? *fid : -1);
+	return golua_callgofunction(coro, coro_index, main_index, main_thread, fid!=NULL ? *fid : -1);
 }
 
 //wrapper for gchook
@@ -160,8 +160,9 @@ int gchook_wrapper(lua_State* L)
 {
 	unsigned int* fid = clua_checkgosomething(L, -1, NULL);
 	if (fid != NULL) {
-		lua_State*  mainThread = clua_get_main_thread(L);
-		size_t main_index = clua_getgostate(mainThread);
+		lua_State* main_thread = clua_get_main_thread(L);
+		size_t main_index = clua_getgostate(main_thread);
+
 		return golua_gchook(main_index, *fid);
 	}
 	return 0;
@@ -191,15 +192,15 @@ static int callback_c(lua_State* coro)
 {
 	int fid = clua_togofunction(coro, lua_upvalueindex(1));
 	size_t coro_index = clua_getgostate(coro);
-	lua_State*  mainThread = clua_get_main_thread(coro);
-	size_t main_index = clua_getgostate(mainThread);
+	lua_State*  main_thread = clua_get_main_thread(coro);
+	size_t main_index = clua_getgostate(main_thread);
 
-	return golua_callgofunction(coro, coro_index, main_index, mainThread, fid);
+	return golua_callgofunction(coro, coro_index, main_index, main_thread, fid);
 }
 
 void clua_pushcallback(lua_State* L)
 {
-	lua_pushcclosure(L,callback_c,1);
+	lua_pushcclosure(L, callback_c, 1);
 }
 
 void clua_pushgostruct(lua_State* L, unsigned int iid)
@@ -207,14 +208,14 @@ void clua_pushgostruct(lua_State* L, unsigned int iid)
 	unsigned int* iidptr = (unsigned int *)lua_newuserdata(L, sizeof(unsigned int));
 	*iidptr = iid;
 	luaL_getmetatable(L, MT_GOINTERFACE);
-	lua_setmetatable(L,-2);
+	lua_setmetatable(L, -2);
 }
 
 int default_panicf(lua_State *L)
 {
 	char *s = (char *)lua_tostring(L, -1);
-	lua_State*  mainThread = clua_get_main_thread(L);
-	size_t main_index = clua_getgostate(mainThread);
+	lua_State*  main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
 
 	go_default_panic_msghandler(L, main_index, s);
 
@@ -226,20 +227,20 @@ int default_panicf(lua_State *L)
 int panic_msghandler(lua_State *L)
 {
 	char *s = (char *)lua_tolstring(L, -1, NULL);
-	lua_State*  mainThread = clua_get_main_thread(L);
-	size_t main_index = clua_getgostate(mainThread);
+	lua_State* main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
 
 	go_panic_msghandler(L, main_index, s);
 	return 1;
 }
 
-void create_uniqArray(lua_State* L) {
+void create_uniq_array(lua_State* L) {
 	// stack: ...
 
 	lua_newtable(L);
 	// stack: newtable, ...
 
-	lua_pushlightuserdata(L,(void*)&GoWithinStateUniqArrayKey);
+	lua_pushlightuserdata(L, (void*)&GoWithinStateUniqArrayKey);
 	// stack: ukey, newtable, ...
 
 	lua_insert(L, -2);    
@@ -252,7 +253,7 @@ void create_uniqArray(lua_State* L) {
 	lua_newtable(L);
 	// stack: newtable, ...
 
-	lua_pushlightuserdata(L,(void*)&GoWithinStateRevUniqMap);
+	lua_pushlightuserdata(L, (void*)&GoWithinStateRevUniqMap);
 	// stack: urevkey, newtable, ...
 
 	lua_insert(L, -2);    
@@ -266,7 +267,7 @@ void create_uniqArray(lua_State* L) {
 int clua_create_uniq_array_if_not_exists(lua_State* L) {
 	// stack: ...
 
-	lua_pushlightuserdata(L,(void*)&GoWithinStateUniqArrayKey);
+	lua_pushlightuserdata(L, (void*)&GoWithinStateUniqArrayKey);
 	// stack: ukey, ...
 	lua_gettable(L, LUA_REGISTRYINDEX);
 	// stack: (uniqArray or nil), ...
@@ -274,7 +275,7 @@ int clua_create_uniq_array_if_not_exists(lua_State* L) {
 	if (lua_isnil(L, -1)) {
 		lua_pop(L, 1);
 		// stack: ...
-		create_uniqArray(L);
+		create_uniq_array(L);
 		// stack: ...
 		return 1;
 	}
@@ -346,7 +347,7 @@ int clua_add_thread_to_uniq_array_and_rev_uniq(lua_State* L) {
 	// stack: ...
 	int top = lua_gettop(L);
 	
-	lua_pushlightuserdata(L,(void*)&GoWithinStateUniqArrayKey);
+	lua_pushlightuserdata(L, (void*)&GoWithinStateUniqArrayKey);
 	// stack: ukey, ...
 
 	lua_gettable(L, LUA_REGISTRYINDEX);    
@@ -396,7 +397,7 @@ int clua_setgostate(lua_State* L, size_t gostateindex)
 	int top = lua_gettop(L);
 
 	lua_atpanic(L, default_panicf);
-	lua_pushlightuserdata(L,(void*)&GoMainStatesKey);
+	lua_pushlightuserdata(L, (void*)&GoMainStatesKey);
 
 	//
 	// store L into a table that maps lua_State* -> gostateindex.
@@ -419,7 +420,7 @@ int clua_setgostate(lua_State* L, size_t gostateindex)
 		//   Lmap
 		
 		// get the key
-		lua_pushlightuserdata(L,(void*)&GoMainStatesKey);
+		lua_pushlightuserdata(L, (void*)&GoMainStatesKey);
 		// stack is now:
 		//  key
 		//  Lmap
@@ -510,8 +511,8 @@ int interface_index_callback(lua_State *L)
 		return 1;
 	}
 
-	lua_State*  mainThread = clua_get_main_thread(L);
-	size_t main_index = clua_getgostate(mainThread);
+	lua_State* main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
 
 	int r = golua_interface_index_callback(L, main_index, *iid, field_name);
 
@@ -543,8 +544,8 @@ int interface_newindex_callback(lua_State *L)
 		return 1;
 	}
 
-	lua_State*  mainThread = clua_get_main_thread(L);
-	size_t main_index = clua_getgostate(mainThread);
+	lua_State* main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
 
 	int r = golua_interface_newindex_callback(L, main_index, *iid, field_name);
 
@@ -578,15 +579,15 @@ void clua_initstate(lua_State* L)
 	luaL_newmetatable(L, MT_GOFUNCTION);
 
 	// gofunction_metatable[__call] = &callback_function
-	lua_pushliteral(L,"__call");
-	lua_pushcfunction(L,&callback_function);
-	lua_settable(L,-3);
+	lua_pushliteral(L, "__call");
+	lua_pushcfunction(L, &callback_function);
+	lua_settable(L, -3);
 
 	// gofunction_metatable[__gc] = &gchook_wrapper
-	lua_pushliteral(L,"__gc");
-	lua_pushcfunction(L,&gchook_wrapper);
-	lua_settable(L,-3);
-	lua_pop(L,1);
+	lua_pushliteral(L, "__gc");
+	lua_pushcfunction(L, &gchook_wrapper);
+	lua_settable(L, -3);
+	lua_pop(L, 1);
 
 	luaL_newmetatable(L, MT_GOINTERFACE);
 
@@ -611,12 +612,15 @@ void clua_initstate(lua_State* L)
 
 int callback_panicf(lua_State* L)
 {
-	lua_pushlightuserdata(L,(void*)&PanicFIDRegistryKey);
-	lua_gettable(L,LUA_REGISTRYINDEX);
-	unsigned int fid = lua_tointeger(L,-1);
-	lua_pop(L,1);
-	size_t gostateindex = clua_getgostate(L);
-	return golua_callpanicfunction(gostateindex,fid);
+	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
+	lua_gettable(L, LUA_REGISTRYINDEX);
+	unsigned int fid = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+
+	lua_State* main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
+
+	return golua_callpanicfunction(L, main_index, fid);
 }
 
 //TODO: currently setting garbage when panicf set to null
@@ -625,9 +629,9 @@ GoValue clua_atpanic(lua_State* L, unsigned int panicf_id)
 	//get old panicfid
 	unsigned int old_id;
 	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
-	lua_gettable(L,LUA_REGISTRYINDEX);
+	lua_gettable(L, LUA_REGISTRYINDEX);
 	if(lua_isnil(L, -1) == 0)
-		old_id = lua_tointeger(L,-1);
+		old_id = lua_tointeger(L, -1);
 	lua_pop(L, 1);
 
 	//set registry key for function id of go panic function
@@ -638,7 +642,7 @@ GoValue clua_atpanic(lua_State* L, unsigned int panicf_id)
 	lua_settable(L, LUA_REGISTRYINDEX);
 
 	//now set the panic function
-	lua_CFunction pf = lua_atpanic(L,&callback_panicf);
+	lua_CFunction pf = lua_atpanic(L, &callback_panicf);
 	//make a GoInterface with a wrapped C panicf or the original go panicf
 	if(pf == &callback_panicf)
 		return (GoValue){1, &old_id};
@@ -653,74 +657,76 @@ int clua_callluacfunc(lua_State* L, lua_CFunction f)
 
 void* allocwrapper(void* ud, void *ptr, size_t osize, size_t nsize)
 {
-	return (void*)golua_callallocf((GoUintptr)ud,(GoUintptr)ptr,osize,nsize);
+	return (void*)golua_callallocf((GoUintptr)ud, (GoUintptr)ptr, osize, nsize);
 }
 
 lua_State* clua_newstate(void* goallocf)
 {
-	return lua_newstate(&allocwrapper,goallocf);
+	return lua_newstate(&allocwrapper, goallocf);
 }
 
 void clua_setallocf(lua_State* L, void* goallocf)
 {
-	lua_setallocf(L,&allocwrapper,goallocf);
+	lua_setallocf(L, &allocwrapper, goallocf);
 }
 
 void clua_openbase(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_base);
-	lua_pushstring(L,"");
+	lua_pushcfunction(L, &luaopen_base);
+	lua_pushstring(L, "");
 	lua_call(L, 1, 0);
 	clua_hide_pcall(L);
 }
 
 void clua_openio(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_io);
-	lua_pushstring(L,"io");
+	lua_pushcfunction(L, &luaopen_io);
+	lua_pushstring(L, "io");
 	lua_call(L, 1, 0);
 }
 
 void clua_openmath(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_math);
-	lua_pushstring(L,"math");
+	lua_pushcfunction(L, &luaopen_math);
+	lua_pushstring(L, "math");
 	lua_call(L, 1, 0);
 }
 
 void clua_openpackage(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_package);
-	lua_pushstring(L,"package");
+	lua_pushcfunction(L, &luaopen_package);
+	lua_pushstring(L, "package");
 	lua_call(L, 1, 0);
 }
 
 void clua_openstring(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_string);
-	lua_pushstring(L,"string");
+	lua_pushcfunction(L, &luaopen_string);
+	lua_pushstring(L, "string");
 	lua_call(L, 1, 0);
 }
 
 void clua_opentable(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_table);
-	lua_pushstring(L,"table");
+	lua_pushcfunction(L, &luaopen_table);
+	lua_pushstring(L, "table");
 	lua_call(L, 1, 0);
 }
 
 void clua_openos(lua_State* L)
 {
-	lua_pushcfunction(L,&luaopen_os);
-	lua_pushstring(L,"os");
+	lua_pushcfunction(L, &luaopen_os);
+	lua_pushstring(L, "os");
 	lua_call(L, 1, 0);
 }
 
 void clua_hook_function(lua_State *L, lua_Debug *ar)
 {
 	lua_checkstack(L, 2);
-	size_t gostateindex = clua_getgostate(L);
-	golua_callgohook(gostateindex);
+	lua_State* main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
+
+	golua_callgohook(L, main_index);
 }
 
 void clua_sethook(lua_State* L, int n)
@@ -790,7 +796,7 @@ int dump_chunk(lua_State *L) {
 	luaL_Buffer b;
 	luaL_checktype(L, -1, LUA_TFUNCTION);
 	lua_settop(L, -1);
-	luaL_buffinit(L,&b);
+	luaL_buffinit(L, &b);
 	int err;
 	err = lua_dump(L, writer, &b);
 	if (err != 0){

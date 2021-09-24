@@ -21,6 +21,7 @@ void clua_hide_pcall(lua_State *L);
 lua_State* clua_newstate(void* goallocf);
 int clua_setgostate(lua_State* L, size_t gostateindex);
 size_t clua_getgostate(lua_State* L);
+int clua_dedup_coro(lua_State* coro);
 
 int clua_togofunction(lua_State* L, int index);
 int clua_togostruct(lua_State *L, int index);
@@ -51,12 +52,6 @@ void clua_luajit_push_cdata_uint64(lua_State *L, uint64_t u);
 
 int clua_isgofunction(lua_State *L, int n);
 int clua_isgostruct(lua_State *L, int n);
-
-int clua_create_uniqArrayIfNotExists(lua_State* L);
-int clua_dedup_coro(lua_State* coro);
-
-// return upos, the array index into uniqArray for coro.
-int clua_addThreadToUniqArrayAndRevUniq(lua_State* L);
 
 void bundle_add_loaders(lua_State* L);
 int bundle_main(lua_State *L, int argc, char** argv);

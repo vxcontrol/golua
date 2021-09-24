@@ -138,9 +138,9 @@ func getGoState(gostateindex int) *State {
 }
 
 //export golua_callgofunction
-func golua_callgofunction(coro *C.lua_State, coro_index uintptr, mainIndex uintptr, mainThread *C.lua_State, fid int) int {
+func golua_callgofunction(coro *C.lua_State, coroIndex uintptr, mainIndex uintptr, mainThread *C.lua_State, fid int) int {
 	var L1 *State
-	if coro_index == 0 {
+	if coroIndex == 0 {
 		// lua side created goroutine, first time seen;
 		// and not yet registered on the go-side.
 
@@ -151,7 +151,7 @@ func golua_callgofunction(coro *C.lua_State, coro_index uintptr, mainIndex uintp
 		L1 = L.ToThreadHelper(coro)
 	} else {
 		// this is the __call() for the MT_GOFUNCTION
-		L1 = getGoState(int(coro_index))
+		L1 = getGoState(int(coroIndex))
 	}
 
 	if fid < 0 {
@@ -164,8 +164,9 @@ func golua_callgofunction(coro *C.lua_State, coro_index uintptr, mainIndex uintp
 }
 
 //export golua_callgohook
-func golua_callgohook(gostateindex uintptr) {
-	L1 := getGoState(int(gostateindex))
+func golua_callgohook(coro *C.lua_State, mainIndex uintptr) {
+	L := getGoState(int(mainIndex))
+	L1 := L.ToThreadHelper(coro)
 	if L1.hookFn != nil {
 		L1.hookFn(L1)
 	}
@@ -174,15 +175,14 @@ func golua_callgohook(gostateindex uintptr) {
 var typeOfBytes = reflect.TypeOf([]byte(nil))
 
 //export golua_interface_newindex_callback
-func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid uint, field_name_cstr *C.char) int {
+func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid uint, fieldNameCstr *C.char) int {
 	L := getGoState(int(mainIndex))
 	L1 := L.ToThreadHelper(coro)
 	iface := L.Shared.registry[iid]
 	ifacevalue := reflect.ValueOf(iface).Elem()
 
-	field_name := C.GoString(field_name_cstr)
-
-	fval := ifacevalue.FieldByName(field_name)
+	fieldName := C.GoString(fieldNameCstr)
+	fval := ifacevalue.FieldByName(fieldName)
 
 	if fval.Kind() == reflect.Ptr {
 		fval = fval.Elem()
@@ -196,7 +196,7 @@ func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid
 			fval.SetBool(L1.ToBoolean(3))
 			return 1
 		} else {
-			L1.PushString("Wrong assignment to field " + field_name)
+			L1.PushString("Wrong assignment to field " + fieldName)
 			return -1
 		}
 
@@ -213,7 +213,7 @@ func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid
 			fval.SetInt(L1.ToInteger64(3))
 			return 1
 		} else {
-			L1.PushString("Wrong assignment to field " + field_name)
+			L1.PushString("Wrong assignment to field " + fieldName)
 			return -1
 		}
 
@@ -230,7 +230,7 @@ func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid
 			fval.SetUint(L1.ToUInteger64(3))
 			return 1
 		} else {
-			L1.PushString("Wrong assignment to field " + field_name)
+			L1.PushString("Wrong assignment to field " + fieldName)
 			return -1
 		}
 
@@ -239,7 +239,7 @@ func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid
 			fval.SetString(L1.ToString(3))
 			return 1
 		} else {
-			L1.PushString("Wrong assignment to field " + field_name)
+			L1.PushString("Wrong assignment to field " + fieldName)
 			return -1
 		}
 
@@ -250,7 +250,7 @@ func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid
 			fval.SetFloat(L1.ToFloat64(3))
 			return 1
 		} else {
-			L1.PushString("Wrong assignment to field " + field_name)
+			L1.PushString("Wrong assignment to field " + fieldName)
 			return -1
 		}
 	case reflect.Slice:
@@ -259,24 +259,24 @@ func golua_interface_newindex_callback(coro *C.lua_State, mainIndex uintptr, iid
 				fval.SetBytes(L1.ToBytes(3))
 				return 1
 			} else {
-				L1.PushString("Wrong assignment to field " + field_name)
+				L1.PushString("Wrong assignment to field " + fieldName)
 				return -1
 			}
 		}
 	}
 
-	L1.PushString("Unsupported type of field " + field_name + ": " + fval.Type().String())
+	L1.PushString("Unsupported type of field " + fieldName + ": " + fval.Type().String())
 	return -1
 }
 
 //export golua_interface_index_callback
-func golua_interface_index_callback(coro *C.lua_State, mainIndex uintptr, iid uint, field_name *C.char) int {
+func golua_interface_index_callback(coro *C.lua_State, mainIndex uintptr, iid uint, fieldNameCstr *C.char) int {
 	L := getGoState(int(mainIndex))
 	L1 := L.ToThreadHelper(coro)
 	iface := L1.Shared.registry[iid]
 	ifacevalue := reflect.ValueOf(iface).Elem()
 
-	fval := ifacevalue.FieldByName(C.GoString(field_name))
+	fval := ifacevalue.FieldByName(C.GoString(fieldNameCstr))
 
 	if fval.Kind() == reflect.Ptr {
 		fval = fval.Elem()
@@ -332,15 +332,16 @@ func golua_interface_index_callback(coro *C.lua_State, mainIndex uintptr, iid ui
 }
 
 //export golua_gchook
-func golua_gchook(main_index uintptr, id uint) int {
-	L := getGoState(int(main_index))
+func golua_gchook(mainIndex uintptr, id uint) int {
+	L := getGoState(int(mainIndex))
 	L.unregister(id)
 	return 0
 }
 
 //export golua_callpanicfunction
-func golua_callpanicfunction(gostateindex uintptr, id uint) int {
-	L1 := getGoState(int(gostateindex))
+func golua_callpanicfunction(coro *C.lua_State, mainIndex uintptr, id uint) int {
+	L := getGoState(int(mainIndex))
+	L1 := L.ToThreadHelper(coro)
 	f := L1.Shared.registry[id].(LuaGoFunction)
 	return f(L1)
 }
@@ -362,6 +363,5 @@ func go_panic_msghandler(coro *C.lua_State, mainIndex uintptr, z *C.char) {
 func go_default_panic_msghandler(coro *C.lua_State, mainIndex uintptr, z *C.char) {
 	L := getGoState(int(mainIndex))
 	L1 := L.ToThreadHelper(coro)
-	le := &LuaError{}
-	panic(le.New(L1, LUA_ERRERR, C.GoString(z)))
+	panic((&LuaError{}).New(L1, LUA_ERRERR, C.GoString(z)))
 }
