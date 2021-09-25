@@ -29,7 +29,7 @@ func main() {
 
 	//force a panic
 	test := func(L1 *lua.State) int {
-		L1.RaiseError("panic check")
+		L1.LuaError("panic check")
 		return 0
 	}
 	L.PushGoFunction(test)

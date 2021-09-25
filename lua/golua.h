@@ -49,6 +49,7 @@ void clua_openos(lua_State* L);
 uint32_t clua_luajit_ctypeid(lua_State *L, int idx);
 void clua_luajit_push_cdata_int64(lua_State *L, int64_t n);
 void clua_luajit_push_cdata_uint64(lua_State *L, uint64_t u);
+void *clua_testudata(lua_State *L, int ud, const char *tname);
 
 int clua_isgofunction(lua_State *L, int n);
 int clua_isgostruct(lua_State *L, int n);

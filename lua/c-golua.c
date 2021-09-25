@@ -9,8 +9,6 @@
 #define MT_GOFUNCTION "GoLua.GoFunction"
 #define MT_GOINTERFACE "GoLua.GoInterface"
 
-#define GOLUA_DEFAULT_MSGHANDLER "golua_default_msghandler"
-
 // golua registry key, main states only, non non-main coroutines.
 // The address of this constant is used as a unique
 // lightuserdata key.
@@ -43,7 +41,7 @@ long long int wrapAtoll(const char *nptr)
 }
 
 /* taken from lua5.2 source */
-void *testudata(lua_State *L, int ud, const char *tname)
+void *clua_testudata(lua_State *L, int ud, const char *tname)
 {
 	void *p = lua_touserdata(L, ud);
 	if (p != NULL)
@@ -62,25 +60,25 @@ void *testudata(lua_State *L, int ud, const char *tname)
 
 int clua_isgofunction(lua_State *L, int n)
 {
-	return testudata(L, n, MT_GOFUNCTION) != NULL;
+	return clua_testudata(L, n, MT_GOFUNCTION) != NULL;
 }
 
 int clua_isgostruct(lua_State *L, int n)
 {
-	return testudata(L, n, MT_GOINTERFACE) != NULL;
+	return clua_testudata(L, n, MT_GOINTERFACE) != NULL;
 }
 
 unsigned int* clua_checkgosomething(lua_State* L, int index, const char *desired_metatable)
 {
 	if (desired_metatable != NULL)
 	{
-		return testudata(L, index, desired_metatable);
+		return clua_testudata(L, index, desired_metatable);
 	}
 	else
 	{
-		unsigned int *sid = testudata(L, index, MT_GOFUNCTION);
+		unsigned int *sid = clua_testudata(L, index, MT_GOFUNCTION);
 		if (sid != NULL) return sid;
-		return testudata(L, index, MT_GOINTERFACE);
+		return clua_testudata(L, index, MT_GOINTERFACE);
 	}
 }
 
@@ -232,6 +230,46 @@ int panic_msghandler(lua_State *L)
 
 	go_panic_msghandler(L, main_index, s);
 	return 1;
+}
+
+int callback_panicf(lua_State* L)
+{
+	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
+	lua_gettable(L, LUA_REGISTRYINDEX);
+	unsigned int fid = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+
+	lua_State* main_thread = clua_get_main_thread(L);
+	size_t main_index = clua_getgostate(main_thread);
+
+	return golua_callpanicfunction(L, main_index, fid);
+}
+
+//TODO: currently setting garbage when panicf set to null
+GoValue clua_atpanic(lua_State* L, unsigned int panicf_id)
+{
+	//get old panicfid
+	unsigned int old_id;
+	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
+	lua_gettable(L, LUA_REGISTRYINDEX);
+	if(lua_isnil(L, -1) == 0)
+		old_id = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+
+	//set registry key for function id of go panic function
+	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
+	//push id value
+	lua_pushinteger(L, panicf_id);
+	//set into registry table
+	lua_settable(L, LUA_REGISTRYINDEX);
+
+	//now set the panic function
+	lua_CFunction pf = lua_atpanic(L, &callback_panicf);
+	//make a GoInterface with a wrapped C panicf or the original go panicf
+	if(pf == &callback_panicf)
+		return (GoValue){1, &old_id};
+	else
+		return (GoValue){2, pf};
 }
 
 void create_uniq_array(lua_State* L) {
@@ -608,46 +646,6 @@ void clua_initstate(lua_State* L)
 
 	lua_register(L, GOLUA_DEFAULT_MSGHANDLER, &panic_msghandler);
 	lua_pop(L, 1);
-}
-
-int callback_panicf(lua_State* L)
-{
-	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
-	lua_gettable(L, LUA_REGISTRYINDEX);
-	unsigned int fid = lua_tointeger(L, -1);
-	lua_pop(L, 1);
-
-	lua_State* main_thread = clua_get_main_thread(L);
-	size_t main_index = clua_getgostate(main_thread);
-
-	return golua_callpanicfunction(L, main_index, fid);
-}
-
-//TODO: currently setting garbage when panicf set to null
-GoValue clua_atpanic(lua_State* L, unsigned int panicf_id)
-{
-	//get old panicfid
-	unsigned int old_id;
-	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
-	lua_gettable(L, LUA_REGISTRYINDEX);
-	if(lua_isnil(L, -1) == 0)
-		old_id = lua_tointeger(L, -1);
-	lua_pop(L, 1);
-
-	//set registry key for function id of go panic function
-	lua_pushlightuserdata(L, (void*)&PanicFIDRegistryKey);
-	//push id value
-	lua_pushinteger(L, panicf_id);
-	//set into registry table
-	lua_settable(L, LUA_REGISTRYINDEX);
-
-	//now set the panic function
-	lua_CFunction pf = lua_atpanic(L, &callback_panicf);
-	//make a GoInterface with a wrapped C panicf or the original go panicf
-	if(pf == &callback_panicf)
-		return (GoValue){1, &old_id};
-	else
-		return (GoValue){2, pf};
 }
 
 int clua_callluacfunc(lua_State* L, lua_CFunction f)

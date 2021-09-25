@@ -16,6 +16,7 @@ func main() {
 
 	L.GetGlobal("print")
 	L.PushString("Hello World!")
+	L.CheckType(2, lua.LUA_TSTRING)
 	L.Call(1, 0)
 
 	L.Register("adder", adder)

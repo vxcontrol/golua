@@ -120,10 +120,12 @@ func (L *State) SetExecutionLimit(instrNumber int) {
 	}, instrNumber)
 }
 
-// lua_error
+// correctly catching lua_error can't support on windows so there using go panic method
 func (L *State) RaiseError(msg string) {
-	L.PushString((&LuaError{}).New(L, 0, msg).String())
-	C.lua_error(L.s)
+	le := (&LuaError{}).New(L, LUA_ERRRUN, msg)
+	L.PushString(le.String())
+	panic(le)
+	// C.lua_error(L.s)
 }
 
 func (L *State) NewError(msg string) *LuaError {

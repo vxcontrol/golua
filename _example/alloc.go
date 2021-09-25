@@ -30,7 +30,6 @@ func AllocatorF(ptr unsafe.Pointer, osize uint, nsize uint) unsafe.Pointer {
 		ptr = unsafe.Pointer(&(slice[0]))
 		refHolder[ptr] = slice
 	}
-	//fmt.Println("in allocf");
 	return ptr
 }
 
@@ -40,9 +39,6 @@ func A2(ptr unsafe.Pointer, osize uint, nsize uint) unsafe.Pointer {
 }
 
 func main() {
-
-	//refHolder = make([][]byte,0,500);
-
 	L := lua.NewStateAlloc(AllocatorF)
 	defer L.Close()
 	L.OpenLibs()

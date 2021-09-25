@@ -9,6 +9,7 @@ package lua
 import "C"
 
 import (
+	"fmt"
 	"os"
 	"unsafe"
 )
@@ -39,11 +40,7 @@ func XMove(from *State, to *State, n int) {
 
 func (L *State) CheckStackArg(narg int) {
 	if int(C.lua_gettop(L.s)) < abs(narg) {
-		format := "stack dosen't contains element"
-		CFormat := C.CString(format)
-		defer C.free(unsafe.Pointer(CFormat))
-		C.lua_pushlstring(L.s, CFormat, C.size_t(len(format)))
-		C.lua_error(L.s)
+		L.RaiseError("stack dosen't contains element")
 	}
 }
 
@@ -59,13 +56,21 @@ func (L *State) Argcheck(cond bool, narg int, extramsg string) {
 	}
 }
 
-// luaL_argerror
+// luaL_argerror is dangerous on windows system
 func (L *State) ArgError(narg int, extramsg string) int {
 	Cextramsg := C.CString(extramsg)
 	defer C.free(unsafe.Pointer(Cextramsg))
 	defer L.r.Unlock()
 	L.r.Lock()
 	return int(C.luaL_argerror(L.s, C.int(narg), Cextramsg))
+}
+
+// luaL_argerror is dangerous on windows system
+func (L *State) LuaError(msg string) int {
+	defer L.r.Unlock()
+	L.r.Lock()
+	L.PushString(msg)
+	return int(C.lua_error(L.s))
 }
 
 // luaL_callmeta
@@ -77,37 +82,44 @@ func (L *State) CallMeta(obj int, e string) int {
 	return int(C.luaL_callmeta(L.s, C.int(obj), Ce))
 }
 
-// luaL_checkany
+// luaL_checkany isn't work on windows due lua_error call
 func (L *State) CheckAny(narg int) {
 	defer L.r.Unlock()
 	L.r.Lock()
 	L.CheckStackArg(narg)
-	C.luaL_checkany(L.s, C.int(narg))
 }
 
-// luaL_checkinteger
+// luaL_checkinteger isn't work on windows due lua_error call
 func (L *State) CheckInteger(narg int) int {
 	defer L.r.Unlock()
 	L.r.Lock()
 	L.CheckStackArg(narg)
-	return int(C.luaL_checkinteger(L.s, C.int(narg)))
+	if !L.IsNumber(narg) {
+		L.raiseArgumentError(narg, LUA_TNUMBER)
+	}
+	return L.ToInteger(narg)
 }
 
-// luaL_checknumber
+// luaL_checknumber isn't work on windows due lua_error call
 func (L *State) CheckNumber(narg int) float64 {
 	defer L.r.Unlock()
 	L.r.Lock()
 	L.CheckStackArg(narg)
-	return float64(C.luaL_checknumber(L.s, C.int(narg)))
+	if !L.IsNumber(narg) {
+		L.raiseArgumentError(narg, LUA_TNUMBER)
+	}
+	return L.ToNumber(narg)
 }
 
-// luaL_checkstring
+// luaL_checkstring isn't work on windows due lua_error call
 func (L *State) CheckString(narg int) string {
-	var length C.size_t
 	defer L.r.Unlock()
 	L.r.Lock()
 	L.CheckStackArg(narg)
-	return C.GoString(C.luaL_checklstring(L.s, C.int(narg), &length))
+	if !L.IsString(narg) {
+		L.raiseArgumentError(narg, LUA_TSTRING)
+	}
+	return L.ToString(narg)
 }
 
 // luaL_checkoption
@@ -118,20 +130,28 @@ func (L *State) CheckOption(narg int, def string, lst []string) int {
 	return 0
 }
 
-// luaL_checktype
+// luaL_checktype isn't work on windows due lua_error call
 func (L *State) CheckType(narg int, t LuaValType) {
 	defer L.r.Unlock()
 	L.r.Lock()
-	C.luaL_checktype(L.s, C.int(narg), C.int(t))
+	L.CheckStackArg(narg)
+	vt := C.lua_type(L.s, C.int(narg))
+	if LuaValType(vt) != t {
+		L.raiseArgumentError(narg, t)
+	}
 }
 
-// luaL_checkudata
+// luaL_checkudata isn't work on windows due lua_error call
 func (L *State) CheckUdata(narg int, tname string) unsafe.Pointer {
 	Ctname := C.CString(tname)
 	defer C.free(unsafe.Pointer(Ctname))
 	defer L.r.Unlock()
 	L.r.Lock()
-	return unsafe.Pointer(C.luaL_checkudata(L.s, C.int(narg), Ctname))
+	L.CheckStackArg(narg)
+	if !L.IsUserdata(narg) {
+		L.raiseArgumentError(narg, LUA_TUSERDATA)
+	}
+	return unsafe.Pointer(C.clua_testudata(L.s, C.int(narg), Ctname))
 }
 
 // Executes file, returns nil for no errors or the lua error string on failure
@@ -560,4 +580,15 @@ func (L *State) OpenOS() {
 	defer L.r.Unlock()
 	L.r.Lock()
 	C.clua_openos(L.s)
+}
+
+func (L *State) raiseArgumentError(narg int, t LuaValType) {
+	tn := C.GoString(C.lua_typename(L.s, C.int(t)))
+	vt := C.lua_type(L.s, C.int(narg))
+	vtn := C.GoString(C.lua_typename(L.s, vt))
+	index := narg
+	if index < 0 {
+		index = L.GetTop() + narg
+	}
+	L.RaiseError(fmt.Sprintf("bad argument #%d (%s expected, got %s)", index, tn, vtn))
 }

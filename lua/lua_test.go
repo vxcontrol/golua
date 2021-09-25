@@ -457,8 +457,8 @@ func TestCustomDebugHook(t *testing.T) {
 		t.Fatalf("Script should have raised an error")
 	} else {
 		le := err.(*LuaError)
-		if le.Code != 0 {
-			t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, 0)
+		if le.Code != LUA_ERRRUN {
+			t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, LUA_ERRRUN)
 		}
 		if le.Msg != "stop" {
 			t.Fatalf("Error should be coming from the hook: %v", le)
@@ -487,6 +487,13 @@ func TestRunLuaCallback(t *testing.T) {
 	}
 
 	L.Register("reg_cb", regCb)
+	code := `r = 0
+	reg_cb(
+		function(x)
+			r = r + x
+			return r
+		end
+	)`
 
 	// This code demonstrates checking that a value on the stack is a go function
 	L.CheckStack(1)
@@ -497,7 +504,7 @@ func TestRunLuaCallback(t *testing.T) {
 	L.Pop(1)
 
 	// We call example_function from inside Lua VM
-	if err := L.DoString("r = 0; reg_cb(function(x) r = r + x; return r; end)"); err != nil {
+	if err := L.DoString(code); err != nil {
 		t.Fatalf("Error executing main function: %v", err)
 	}
 
@@ -534,7 +541,7 @@ func TestRunLuaCallback(t *testing.T) {
 	L.Pop(-1)
 }
 
-func TestRunLuaCallbackFail(t *testing.T) {
+func TestRunLuaCallbackFailFromLuaCode(t *testing.T) {
 	L := NewState()
 	L.OpenLibs()
 	defer L.Close()
@@ -554,6 +561,14 @@ func TestRunLuaCallbackFail(t *testing.T) {
 	}
 
 	L.Register("reg_cb", regCb)
+	code := `reg_cb(
+		function(x)
+			for t=1,x do
+				print(t)
+			end
+			return x
+		end
+	)`
 
 	// This code demonstrates checking that a value on the stack is a go function
 	L.CheckStack(1)
@@ -564,7 +579,7 @@ func TestRunLuaCallbackFail(t *testing.T) {
 	L.Pop(1)
 
 	// We call example_function from inside Lua VM
-	if err := L.DoString("reg_cb(function(x) for t=1,x do print(t); end; return x; end)"); err != nil {
+	if err := L.DoString(code); err != nil {
 		t.Fatalf("Error executing main function: %v", err)
 	}
 
@@ -588,6 +603,83 @@ func TestRunLuaCallbackFail(t *testing.T) {
 				t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, LUA_ERRRUN)
 			}
 			if len(le.LuaST) != 2 {
+				t.Fatalf("Wrong amount of lines in stacktrace: %v (%d)\n", le, len(le.LuaST))
+			}
+		}
+		stCb.Pop(-1)
+	}
+
+	L.Unref(LUA_REGISTRYINDEX, refCb)
+	L.Unref(LUA_REGISTRYINDEX, refTr)
+}
+
+func TestRunLuaCallbackFailFromGoCode(t *testing.T) {
+	L := NewState()
+	L.OpenLibs()
+	defer L.Close()
+
+	var stCb *State
+	var refCb, refTr int
+	regCb := func(L *State) int {
+		if !L.IsFunction(-1) {
+			t.Fatalf("Recived callback is not a lua function")
+		}
+
+		stCb = L.NewThread()
+		refTr = L.Ref(LUA_REGISTRYINDEX)
+		refCb = L.Ref(LUA_REGISTRYINDEX)
+
+		return 0
+	}
+	test := func(L *State) int {
+		L.CheckNumber(-1)
+		return 0
+	}
+
+	L.Register("reg_cb", regCb)
+	code := `reg_cb(
+		function(x)
+			test(x)
+			return x
+		end
+	)`
+
+	// This code demonstrates checking that a value on the stack is a go function
+	L.CheckStack(1)
+	L.GetGlobal("reg_cb")
+	if !L.IsGoFunction(-1) {
+		t.Fatalf("IsGoFunction failed to recognize a Go function object")
+	}
+	L.Pop(1)
+
+	// We call example_function from inside Lua VM
+	if err := L.DoString(code); err != nil {
+		t.Fatalf("Error executing main function: %v", err)
+	}
+
+	if stCb == nil {
+		t.Fatalf("Lua callback is not set")
+	}
+
+	stCb.Register("test", test)
+
+	for i := 0; i < 10; i++ {
+		stCb.RawGeti(LUA_REGISTRYINDEX, refCb)
+		if i%2 == 0 {
+			stCb.PushNumber(3)
+		} else {
+			stCb.PushString("abc")
+		}
+		if err := stCb.Call(1, 1); err == nil && i%2 == 1 {
+			t.Fatal("Call did not return an error")
+		} else if err != nil {
+			le := err.(*LuaError)
+
+			if le.Code != LUA_ERRRUN {
+				t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, LUA_ERRRUN)
+			}
+			// TODO: it's a big problem that previously calls are keeping on the stack
+			if len(le.LuaST)%2 != 0 {
 				t.Fatalf("Wrong amount of lines in stacktrace: %v (%d)\n", le, len(le.LuaST))
 			}
 		}
@@ -685,7 +777,7 @@ func TestLuaRegsitryIsPerState(t *testing.T) {
 	if obsVal != val {
 		panic("expected obsVal to match val")
 	}
-	//fmt.Printf("good: retreived val from L registry\n")
+	// good: retreived val from L registry
 	L.Pop(1)
 
 	// now query the L2 registry
@@ -695,7 +787,7 @@ func TestLuaRegsitryIsPerState(t *testing.T) {
 		fmt.Printf("bad, expected nil, got: '%s'\n", L2.LuaStackPosToString(-1))
 		panic("expected nil back when querying L2 registry for key")
 	}
-	//fmt.Printf("good: did not retreived val from L2 registry under key\n")
+	// good: did not retreived val from L2 registry under key
 
 	// now check that a new coroutine in L sees the same registry.
 	L3 := L.NewThread()
@@ -708,7 +800,7 @@ func TestLuaRegsitryIsPerState(t *testing.T) {
 	if obsVal3 != val {
 		panic("expected obsVal3 to match val")
 	}
-	//fmt.Printf("good: retreived val from L3 registry\n")
+	// good: retreived val from L3 registry
 }
 
 func assert(t *testing.T, b bool, msg string) {
