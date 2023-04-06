@@ -1,0 +1,65 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  CGO_ENABLED: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          # - arm64
+          - amd64
+        go:
+          - '1.19'
+          - '1.20'
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Go
+        uses: actions/setup-go@v4.0.0
+        with:
+          go-version: ${{ matrix.go }}
+
+      # amd64
+      - name: 'Build with ${{ matrix.go }} for amd64'
+        if: ${{ matrix.arch == 'amd64' }}
+        run: go build -race -v ./...
+
+      - name: 'Test with ${{ matrix.go }} for amd64'
+        if: ${{ matrix.arch == 'amd64' }}
+        run: go test -race -v ./...
+
+      - name: 'Bench with ${{ matrix.go }} for amd64'
+        if: ${{ matrix.arch == 'amd64' }}
+        run: go test -bench=. -benchmem -race -v ./...
+      
+      # arm64
+      - name: 'Build with ${{ matrix.go }} for arm64'
+        if: ${{ matrix.arch == 'arm64' }}
+        env:
+          CGOENABLED: true
+          GOARCH: arm64
+        run: |
+          go test -c lua/*
+
+      - name: 'Test and Bench with ${{ matrix.go }} on arm64'
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: bullseye
+          dockerRunArgs: --mount type=bind,source="$(pwd)",target=/checkout,readonly
+          run: |
+            find /checkout -name '*.test' -type f -executable -print0 | \
+              xargs -t -0 -I '{}' sh -c '{} -test.v && {} -test.bench=. -test.benchmem -test.v'
