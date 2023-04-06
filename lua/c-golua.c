@@ -650,7 +650,7 @@ void clua_initstate(lua_State* L)
 
 int clua_callluacfunc(lua_State* L, lua_CFunction f)
 {
-	return f(L);
+	return lua_cpcall(L, f, NULL);
 }
 
 void* allocwrapper(void* ud, void *ptr, size_t osize, size_t nsize)
@@ -751,7 +751,7 @@ void clua_luajit_push_cdata_uint64(lua_State *L, uint64_t u)
 typedef struct _chunk {
 	int size; // chunk size
 	char *buffer; // chunk data
-	char* toread; // chunk to read
+	char *toread; // chunk to read
 } chunk;
 
 static const char * reader(lua_State *L, void *ud, size_t *sz) {

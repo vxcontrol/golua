@@ -563,8 +563,8 @@ func TestRunLuaCallbackFailFromLuaCode(t *testing.T) {
 	L.Register("reg_cb", regCb)
 	code := `reg_cb(
 		function(x)
-			for t=1,x do
-				print(t)
+			if type(x) ~= "number" then
+				error("type missmatch")
 			end
 			return x
 		end
@@ -602,7 +602,7 @@ func TestRunLuaCallbackFailFromLuaCode(t *testing.T) {
 			if le.Code != LUA_ERRRUN {
 				t.Fatalf("Wrong kind of lua error: %v (%d %d)\n", le, le.Code, LUA_ERRRUN)
 			}
-			if len(le.LuaST) != 2 {
+			if len(le.LuaST) != 3 {
 				t.Fatalf("Wrong amount of lines in stacktrace: %v (%d)\n", le, len(le.LuaST))
 			}
 		}
