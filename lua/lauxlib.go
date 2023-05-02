@@ -18,8 +18,8 @@ func (L *State) Lock() {
 	L.r.Lock()
 }
 
-func (L *State) Unlock() {
-	L.r.Unlock()
+func (L *State) Unlock() error {
+	return L.r.Unlock()
 }
 
 func abs(v int) int {
