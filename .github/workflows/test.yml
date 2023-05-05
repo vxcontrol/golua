@@ -18,11 +18,12 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          # - arm64
+          - i386
           - amd64
         go:
           - '1.19'
           - '1.20'
+
     steps:
       - uses: actions/checkout@v3
       
@@ -30,6 +31,19 @@ jobs:
         uses: actions/setup-go@v4.0.0
         with:
           go-version: ${{ matrix.go }}
+
+      - name: Install gcc
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt update
+          sudo apt install gcc -y
+
+      - name: Install gcc-multilib
+        if: matrix.arch == 'i386'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt update
+          sudo apt install gcc-multilib -y
 
       # amd64
       - name: 'Build with ${{ matrix.go }} for amd64'
@@ -44,22 +58,24 @@ jobs:
         if: ${{ matrix.arch == 'amd64' }}
         run: go test -bench=. -benchmem -race -v ./...
       
-      # arm64
-      - name: 'Build with ${{ matrix.go }} for arm64'
-        if: ${{ matrix.arch == 'arm64' }}
+      # 386
+      - name: 'Build with ${{ matrix.go }} for i386'
+        if: ${{ matrix.arch == 'i386' }}
         env:
           CGOENABLED: true
-          GOARCH: arm64
+          GOARCH: 386
+          CGO_LDFLAGS: -static
         run: |
-          go test -c lua/*
-
-      - name: 'Test and Bench with ${{ matrix.go }} on arm64'
-        if: ${{ matrix.arch == 'arm64' }}
-        uses: uraimo/run-on-arch-action@v2
+          go test -c -v ./lua/...
+      
+      - name: 'Test and Bench with ${{ matrix.go }} on i386'
+        if: ${{ matrix.arch == 'i386' }}
+        uses: vxcontrol/run-on-arch-action@0.9.0
         with:
-          arch: aarch64
+          arch: i386
           distro: bullseye
           dockerRunArgs: --mount type=bind,source="$(pwd)",target=/checkout,readonly
           run: |
+            cd /checkout/lua && \
             find /checkout -name '*.test' -type f -executable -print0 | \
               xargs -t -0 -I '{}' sh -c '{} -test.v && {} -test.bench=. -test.benchmem -test.v'
